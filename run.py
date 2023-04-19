@@ -62,10 +62,10 @@ if __name__ == "__main__":
 
     # argparse
     parser = argparse.ArgumentParser(description="Compare optimizers")
-    parser.add_argument(
+    parser.add_argument(  # TODO: I think we should change this behavior to: If no arg is given, use both custom and pytorch. With this arg, use only pytorch.
         "--preimplemented",
         action="store_true",
-        help="if true, use pytorch implemented optimizers",
+        help="if true, use only pytorch implemented optimizers",
     )
     parser.add_argument(
         "--dataset",
@@ -73,6 +73,15 @@ if __name__ == "__main__":
         default="MNIST CIFAR",
         action="store",
         help="Controls which dataset is used. Defaults to using both.",
+    )
+    parser.add_argument(
+        "--optimizer",
+        choices=["SGD", "RMSprop", "Adam"],
+        default="SGD RMSprop Adam",
+        action="store",
+        help="""Controls which optimizers are tested. Defaults to all 3. 
+                By default, only the custom implementation will be used. 
+                Add --preimplemented to use the pytorch versions instead""",
     )
     args = parser.parse_args()
 
@@ -122,10 +131,20 @@ if __name__ == "__main__":
         dataset_list.append((dataset_name, train_loader, test_loader))
 
     # initialize optimizers
+    optimizer_list = []
+
     if args.preimplemented:
-        optimizer_list = [("SGD", SGD), ("RMSprop", RMSprop), ("Adam", Adam)]
+        SGD_list = [("SGD", SGD)]
+        RMSprop_list = [("RMSprop", RMSprop)]
+        Adam_list = [("Adam", Adam)]
     else:
-        optimizer_list = [("SGD", _SGD_), ("RMSprop", _RMSprop_), ("Adam", _Adam_)]
+        SGD_list = [("SGD", _SGD_)]
+        RMSprop_list = [("RMSprop", _RMSprop_)]
+        Adam_list = [("Adam", _Adam_)]
+
+    optimizer_idx = {"SGD": SGD_list, "RMSprop": RMSprop_list, "Adam": Adam_list}
+    for optimizer_name in args.optimizer.split():
+        optimizer_list.extend(optimizer_idx[optimizer_name])
 
     # standard cross entropy
     loss = nn.CrossEntropyLoss()
