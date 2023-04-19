@@ -55,7 +55,7 @@ def test(model, dataset):
 
 if __name__ == "__main__":
     # hyperparameters
-    EPOCHS = 15
+    EPOCHS = 5
     LR = 1e-3
     MOMENTUM = 0.9
     BATCH_SIZE = 256
@@ -88,13 +88,13 @@ if __name__ == "__main__":
     # load datasets
     dataset_list = []
     dataset_idx = {
-        "MNIST": torchvision.datasets.MNIST,
-        "CIFAR": torchvision.datasets.CIFAR10,
+        "MNIST": (torchvision.datasets.MNIST, (0.1307,), (0.3081,)),
+        "CIFAR": (torchvision.datasets.CIFAR10, (0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
     }
 
     for dataset_name in args.dataset.split():
         print(colored(f"loading dataset {dataset_name}...", "green"))
-        dataset = dataset_idx[dataset_name]
+        dataset, mean, std = dataset_idx[dataset_name]
         train_loader = torch.utils.data.DataLoader(
             dataset(
                 "data",
@@ -103,7 +103,7 @@ if __name__ == "__main__":
                 transform=torchvision.transforms.Compose(
                     [
                         torchvision.transforms.ToTensor(),
-                        torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                        torchvision.transforms.Normalize(mean, std),
                     ]
                 ),
             ),
@@ -119,7 +119,7 @@ if __name__ == "__main__":
                 transform=torchvision.transforms.Compose(
                     [
                         torchvision.transforms.ToTensor(),
-                        torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                        torchvision.transforms.Normalize(mean, std),
                     ]
                 ),
             ),
