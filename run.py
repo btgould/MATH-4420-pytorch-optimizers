@@ -67,75 +67,59 @@ if __name__ == "__main__":
         action="store_true",
         help="if true, use pytorch implemented optimizers",
     )
+    parser.add_argument(
+        "--dataset",
+        choices=["MNIST", "CIFAR"],
+        default="MNIST CIFAR",
+        action="store",
+        help="Controls which dataset is used. Defaults to using both.",
+    )
     args = parser.parse_args()
 
     # load datasets
-    print(colored("loading datasets...", "green"))
-    mnist_trainset = torch.utils.data.DataLoader(
-        torchvision.datasets.MNIST(
-            "data",
-            train=True,
-            download=True,
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.1307,), (0.3081,)),
-                ]
-            ),
-        ),
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=2,
-    )
-    mnist_testset = torch.utils.data.DataLoader(
-        torchvision.datasets.MNIST(
-            "data",
-            train=False,
-            download=True,
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.1307,), (0.3081,)),
-                ]
-            ),
-        ),
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=2,
-    )
+    dataset_list = []
+    dataset_idx = {
+        "MNIST": torchvision.datasets.MNIST,
+        "CIFAR": torchvision.datasets.CIFAR10,
+    }
 
-    cifar_trainset = torch.utils.data.DataLoader(
-        torchvision.datasets.CIFAR10(
-            "data",
-            train=True,
-            download=True,
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.1307,), (0.3081,)),
-                ]
+    for dataset_name in args.dataset.split():
+        print(colored(f"loading dataset {dataset_name}...", "green"))
+        dataset = dataset_idx[dataset_name]
+        train_loader = torch.utils.data.DataLoader(
+            dataset(
+                "data",
+                train=True,
+                download=True,
+                transform=torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.ToTensor(),
+                        torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                    ]
+                ),
             ),
-        ),
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=2,
-    )
-    cifar_testset = torch.utils.data.DataLoader(
-        torchvision.datasets.CIFAR10(
-            "data",
-            train=False,
-            download=True,
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    torchvision.transforms.Normalize((0.1307,), (0.3081,)),
-                ]
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            num_workers=2,
+        )
+        test_loader = torch.utils.data.DataLoader(
+            dataset(
+                "data",
+                train=False,
+                download=True,
+                transform=torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.ToTensor(),
+                        torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                    ]
+                ),
             ),
-        ),
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        num_workers=2,
-    )
+            batch_size=BATCH_SIZE,
+            shuffle=False,
+            num_workers=2,
+        )
+
+        dataset_list.append((dataset_name, train_loader, test_loader))
 
     # initialize optimizers
     if args.preimplemented:
@@ -147,13 +131,10 @@ if __name__ == "__main__":
     loss = nn.CrossEntropyLoss()
 
     # train and test
-    for dataset, trainset, testset in [
-        ("MNIST", mnist_trainset, mnist_testset),
-        ("CIFAR10", cifar_trainset, cifar_testset),
-    ]:
+    for dataset_name, trainset, testset in dataset_list:
         for name, Opt in optimizer_list:
             # initialize model
-            if dataset == "MNIST":
+            if dataset_name == "MNIST":
                 model = iresnet34(image_channels=1)
             else:
                 model = iresnet34(image_channels=3)
@@ -165,7 +146,8 @@ if __name__ == "__main__":
                 optimizer = Opt(model.parameters(), lr=LR)
             print(
                 colored(
-                    f"training  on dataset {dataset} with optimizer {name}...", "green"
+                    f"training  on dataset {dataset_name} with optimizer {name}...",
+                    "green",
                 )
             )
             train(model, trainset, optimizer, loss, None, EPOCHS)
