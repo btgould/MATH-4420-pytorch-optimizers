@@ -4,8 +4,9 @@ from torch.optim import SGD, RMSprop, Adam
 # base class for subclassing
 from torch.optim import Optimizer
 
+import torch
+from torch.nn.parameter import Parameter
 from typing import Optional
-
 
 # implmentation from scratch
 class _SGD_(Optimizer):
@@ -42,10 +43,87 @@ class _RMSprop_(Optimizer):
         maximize: bool = False,
         differentiable: bool = False,
     ):
-        raise NotImplementedError
+        if not 0.0 <= lr:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if not 0.0 <= eps:
+            raise ValueError("Invalid epsilon value: {}".format(eps))
+        if not 0.0 <= momentum:
+            raise ValueError("Invalid momentum value: {}".format(momentum))
+        if not 0.0 <= weight_decay:
+            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+        if not 0.0 <= alpha:
+            raise ValueError("Invalid alpha value: {}".format(alpha))
+
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            alpha=alpha,
+            eps=eps,
+            centered=centered,
+            weight_decay=weight_decay,
+            foreach=foreach,
+            maximize=maximize,
+            differentiable=differentiable,
+        )
+        super().__init__(params, defaults)
+
+    def __init_state__(self, state, p):
+        state["step"] = 0
+        state["sq_avg"] = torch.zeros_like(p)
+        state["buffer"] = torch.zeros_like(p)
+        state["avg_grad"] = torch.zeros_like(p)
 
     def step(self, closure=None):
-        raise NotImplementedError
+        centered = self.defaults["centered"]
+
+        # Loop through each parameter in each parameter group
+        with torch.no_grad():
+            for group in self.param_groups:
+                for p in group["params"]:
+                    lr = self.defaults["lr"]
+                    alpha = self.defaults["alpha"]
+                    momentum = self.defaults["momentum"]
+                    eps = self.defaults["eps"]
+                    weight_decay = self.defaults["weight_decay"]
+
+                    # Get "state" of parameter (stores RMS, momentum, etc)
+                    state = self.state[p]
+                    if len(state) == 0:
+                        self.__init_state__(state, p)
+                    rms = state["sq_avg"]
+                    avg_grad = state["avg_grad"]
+                    buffer = state["buffer"]
+                    state["step"] += 1
+
+                    # Get gradient of param
+                    if p.grad is None:
+                        continue
+                    grad = p.grad.data
+                    if weight_decay != 0:
+                        grad += weight_decay * p
+
+                    # Get RMS of param's gradient
+                    rms = alpha * rms + (1 - alpha) * grad * grad
+                    centered_rms = rms
+
+                    # Centering: instead of normalizing by magnitude of the grad,
+                    # normalize by magnitude of difference between current grad and average grad
+                    if centered:
+                        avg_grad = alpha * avg_grad + (1 - alpha) * grad
+                        state["avg_grad"] = avg_grad
+                        centered_rms -= avg_grad**2
+
+                    normalized_grad = grad / (centered_rms.sqrt() + eps)
+
+                    # Apply computed update 
+                    if momentum > 0:
+                        # Use update with accumulated momentum
+                        buffer = momentum * buffer + normalized_grad
+                        p.add_(buffer, alpha = -lr)
+                        state["buffer"] = buffer 
+                    else:
+                        # Use update on own 
+                        p.add_(normalized_grad, alpha=-lr)
 
 
 class _Adam_(Optimizer):

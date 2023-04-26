@@ -165,7 +165,7 @@ if __name__ == "__main__":
                 optimizer = Opt(model.parameters(), lr=LR)
             print(
                 colored(
-                    f"training  on dataset {dataset_name} with optimizer {name}...",
+                    f"training on dataset {dataset_name} with optimizer {name}...",
                     "green",
                 )
             )
