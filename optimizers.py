@@ -68,7 +68,6 @@ class _RMSprop_(Optimizer):
         super().__init__(params, defaults)
 
     def __init_state__(self, state, p):
-        state["step"] = 0
         state["sq_avg"] = torch.zeros_like(p)
         state["buffer"] = torch.zeros_like(p)
         state["avg_grad"] = torch.zeros_like(p)
@@ -93,7 +92,6 @@ class _RMSprop_(Optimizer):
                     rms = state["sq_avg"]
                     avg_grad = state["avg_grad"]
                     buffer = state["buffer"]
-                    state["step"] += 1
 
                     # Get gradient of param
                     if p.grad is None:
@@ -119,11 +117,11 @@ class _RMSprop_(Optimizer):
                     if momentum > 0:
                         # Use update with accumulated momentum
                         buffer = momentum * buffer + normalized_grad
-                        p.add_(buffer, alpha = -lr)
+                        p -= lr * buffer
                         state["buffer"] = buffer 
                     else:
                         # Use update on own 
-                        p.add_(normalized_grad, alpha=-lr)
+                        p -= lr * normalized_grad
 
 
 class _Adam_(Optimizer):
