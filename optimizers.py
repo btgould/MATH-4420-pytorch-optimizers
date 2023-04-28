@@ -68,24 +68,22 @@ class _RMSprop_(Optimizer):
         super().__init__(params, defaults)
 
     def __init_state__(self, state, p):
-        state["step"] = 0
         state["sq_avg"] = torch.zeros_like(p)
         state["buffer"] = torch.zeros_like(p)
         state["avg_grad"] = torch.zeros_like(p)
 
     def step(self, closure=None):
         centered = self.defaults["centered"]
+        lr = self.defaults["lr"]
+        alpha = self.defaults["alpha"]
+        momentum = self.defaults["momentum"]
+        eps = self.defaults["eps"]
+        weight_decay = self.defaults["weight_decay"]
 
         # Loop through each parameter in each parameter group
         with torch.no_grad():
             for group in self.param_groups:
                 for p in group["params"]:
-                    lr = self.defaults["lr"]
-                    alpha = self.defaults["alpha"]
-                    momentum = self.defaults["momentum"]
-                    eps = self.defaults["eps"]
-                    weight_decay = self.defaults["weight_decay"]
-
                     # Get "state" of parameter (stores RMS, momentum, etc)
                     state = self.state[p]
                     if len(state) == 0:
@@ -93,12 +91,11 @@ class _RMSprop_(Optimizer):
                     rms = state["sq_avg"]
                     avg_grad = state["avg_grad"]
                     buffer = state["buffer"]
-                    state["step"] += 1
 
                     # Get gradient of param
                     if p.grad is None:
                         continue
-                    grad = p.grad.data
+                    grad = p.grad.data if not self.defaults["maximize"] else -p.grad.data
                     if weight_decay != 0:
                         grad += weight_decay * p
 
@@ -119,11 +116,11 @@ class _RMSprop_(Optimizer):
                     if momentum > 0:
                         # Use update with accumulated momentum
                         buffer = momentum * buffer + normalized_grad
-                        p.add_(buffer, alpha = -lr)
+                        p -= lr * buffer
                         state["buffer"] = buffer 
                     else:
                         # Use update on own 
-                        p.add_(normalized_grad, alpha=-lr)
+                        p -= lr * normalized_grad
 
 
 class _Adam_(Optimizer):
@@ -142,7 +139,65 @@ class _Adam_(Optimizer):
         differentiable: bool = False,
         fused: Optional[bool] = None
     ):
-        raise NotImplementedError
+        if not 0.0 <= lr:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if not 0.0 <= eps:
+            raise ValueError("Invalid epsilon value: {}".format(eps))
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
+        if not 0.0 <= weight_decay:
+            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+
+        defaults = dict(lr=lr, betas=betas, eps=eps,
+                        weight_decay=weight_decay, amsgrad=amsgrad,
+                        maximize=maximize, foreach=foreach, capturable=capturable,
+                        differentiable=differentiable, fused=fused)
+        super().__init__(params, defaults)
+
+    def __init_state__(self, state, p):
+        state["first_moment"] = torch.zeros_like(p)
+        state["second_moment"] = torch.zeros_like(p)
+        state["max_second_moment"] = torch.zeros_like(p)
 
     def step(self, closure=None):
-        raise NotImplementedError
+        lr = self.defaults["lr"]
+        eps = self.defaults["eps"]
+        beta_1, beta_2 = self.defaults["betas"]
+        weight_decay = self.defaults["weight_decay"]
+
+        with torch.no_grad():
+            for group in self.param_groups:
+                for p in group["params"]:
+                    # Get "state" of parameter (stores RMS, momentum, etc)
+                    state = self.state[p]
+                    if len(state) == 0:
+                        self.__init_state__(state, p)
+                    first_moment = state["first_moment"]
+                    second_moment = state["second_moment"]
+                    max_second_moment = state["max_second_moment"]
+
+                    # Get gradient of param
+                    if p.grad is None:
+                        continue
+                    grad = p.grad.data if not self.defaults["maximize"] else -p.grad.data
+                    if weight_decay != 0:
+                        grad += weight_decay * p
+
+                    # Update moments
+                    first_moment = beta_1 * first_moment + (1-beta_1) * grad
+                    second_moment = beta_2 * second_moment + (1-beta_2) * grad ** 2
+                    state["first_moment"] = first_moment
+                    state["second_moment"] = second_moment
+
+                    normalized_first_moment = first_moment / (1 - beta_1)
+                    normalized_second_moment = second_moment / (1 - beta_2)
+
+                    # Apply computed update
+                    if self.defaults["amsgrad"]:
+                        max_second_moment = max(max_second_moment, normalized_second_moment)
+                        state["max_second_moment"] = max_second_moment
+                        p -= lr * normalized_first_moment / (max_second_moment.sqrt() + eps)
+                    else:
+                        p -= lr * normalized_first_moment / (normalized_second_moment.sqrt() + eps)
