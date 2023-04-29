@@ -127,6 +127,7 @@ class _RMSprop_(Optimizer):
 
                     # Get RMS of param's gradient
                     rms = alpha * rms + (1 - alpha) * grad * grad
+                    state["sq_avg"] = rms
                     centered_rms = rms
 
                     # Centering: instead of normalizing by magnitude of the grad,

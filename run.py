@@ -10,12 +10,17 @@ from time import time
 
 
 # train loop using autmatic mixed precision
-def train(model, dataset, optimizer, Loss, schedueler, epochs):
+def train(model, dataset, optimizer, Loss, scheduler, epochs, testset=False):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.train()
     scaler = torch.cuda.amp.GradScaler()
+    loss_list = []
+    acc_list = []
+    test_acc_list = []
     for epoch in range(epochs):
         epoch_start = time()
         running_loss = 0.0
+        correct, total = 0, 0
         for i, data in enumerate(dataset):
             inputs, labels = data
             inputs = inputs.to(device)
@@ -27,16 +32,36 @@ def train(model, dataset, optimizer, Loss, schedueler, epochs):
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+
+            # metrics
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
             running_loss += loss.item()
+            correct += (predicted == labels).sum().item()
+            loss_list.append(loss.item())
+
         print(
-            f"Epoch: {epoch + 1}, average loss: {running_loss / len(dataset):.4f}, time: {time() - epoch_start:.2f} seconds"
+            f"Epoch: {epoch + 1}, average loss: {running_loss / len(dataset):.4f}, acc: {correct*100/total:.2f}, time: {time() - epoch_start:.2f} seconds"
         )
-        running_loss = 0.0
-        if schedueler is not None:
-            schedueler.step()
+        # track train and test accuracy
+        acc_list.append(correct * 100 / total)
+        if testset is not False:
+            test_acc_list.append(test(model, testset, Loss)[0])
+            model.train()
+        
+        # scheduler update - exp decay
+        if scheduler is not None:
+            optimizer.defaults["lr"] *= .9
+            print(optimizer.defaults["lr"])
+
+  
+
+    return loss_list, acc_list, test_acc_list
 
 
-def test(model, dataset):
+def test(model, dataset, Loss, imgset="test"):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    running_loss = 0.0
     model.eval()
     correct = 0
     total = 0
@@ -45,24 +70,19 @@ def test(model, dataset):
             images, labels = data
             images = images.to(device)
             labels = labels.to(device)
-            outputs = model(images)
+            with torch.cuda.amp.autocast():
+                outputs = model(images)
+                loss = Loss(outputs, labels)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
+            running_loss += loss.item()
             correct += (predicted == labels).sum().item()
-    print(f"Accuracy of the network on test images: {(100 * correct / total):.2f}")
+    print(f"Accuracy of the network on {imgset} images: {(100 * correct / total):.2f}, test loss: {running_loss / len(dataset):.4f}")
+    return 100 * correct / total, running_loss / len(dataset)
 
-    return 100 * correct / total
 
-
-if __name__ == "__main__":
-    # hyperparameters
-    EPOCHS = 5
-    LR = 1e-3
-    MOMENTUM = 0.9
-    BATCH_SIZE = 256
-    WEIGHT_DECAY = 1e-4
-
-    # argparse
+def get_args():
+     # argparse
     parser = argparse.ArgumentParser(description="Compare optimizers")
     parser.add_argument(  # TODO: I think we should change this behavior to: If no arg is given, use both custom and pytorch. With this arg, use only pytorch.
         "--preimplemented",
@@ -78,15 +98,30 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--optimizer",
-        choices=["SGD", "RMSprop", "Adam"],
-        default="SGD RMSprop Adam",
+        choices=["SGD", "SGD+scheduler","RMSprop", "Adam"],
+        default="SGD SGD+scheduler RMSprop Adam",
         action="store",
         help="""Controls which optimizers are tested. Defaults to all 3. 
                 By default, only the custom implementation will be used. 
                 Add --preimplemented to use the pytorch versions instead""",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=5,
+        help="Number of epochs to train for. Defaults to 5.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=256,
+        help="Batch size to use. Defaults to 256.",
+    )
 
+    args = parser.parse_args()
+    return args
+
+def get_dataset_list(args):
     # load datasets
     dataset_list = []
     dataset_idx = {
@@ -109,7 +144,7 @@ if __name__ == "__main__":
                     ]
                 ),
             ),
-            batch_size=BATCH_SIZE,
+            batch_size=args.batch_size,
             shuffle=True,
             num_workers=2,
         )
@@ -125,12 +160,30 @@ if __name__ == "__main__":
                     ]
                 ),
             ),
-            batch_size=BATCH_SIZE,
+            batch_size=args.batch_size,
             shuffle=False,
             num_workers=2,
         )
 
         dataset_list.append((dataset_name, train_loader, test_loader))
+    return dataset_list
+
+
+
+if __name__ == "__main__":
+    # get args
+    args=get_args()
+
+    # hyperparameters
+    EPOCHS = args.epochs
+    LR = 1e-3
+    MOMENTUM = 0.9
+    BATCH_SIZE = args.batch_size
+    WEIGHT_DECAY = 1e-4
+
+    dataset_list=get_dataset_list(args)
+
+    
 
     # initialize optimizers
     optimizer_list = []
