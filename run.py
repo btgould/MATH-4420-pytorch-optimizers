@@ -32,7 +32,8 @@ def train(model, dataset, optimizer, Loss, schedueler, epochs):
             f"Epoch: {epoch + 1}, average loss: {running_loss / len(dataset):.4f}, time: {time() - epoch_start:.2f} seconds"
         )
         running_loss = 0.0
-        # schedueler.step()
+        if schedueler is not None:
+            schedueler.step()
 
 
 def test(model, dataset):
@@ -59,6 +60,7 @@ if __name__ == "__main__":
     LR = 1e-3
     MOMENTUM = 0.9
     BATCH_SIZE = 256
+    WEIGHT_DECAY = 1e-4
 
     # argparse
     parser = argparse.ArgumentParser(description="Compare optimizers")
@@ -160,9 +162,9 @@ if __name__ == "__main__":
             device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             model.to(device)
             if name in ["SGD", "RMSprop"]:
-                optimizer = Opt(model.parameters(), lr=LR, momentum=MOMENTUM)
+                optimizer = Opt(model.parameters(), lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY)
             else:
-                optimizer = Opt(model.parameters(), lr=LR)
+                optimizer = Opt(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
             print(
                 colored(
                     f"training on dataset {dataset_name} with optimizer {name}...",
