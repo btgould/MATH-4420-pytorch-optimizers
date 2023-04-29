@@ -8,25 +8,57 @@ import torch
 from torch.nn.parameter import Parameter
 from typing import Optional
 
-# implmentation from scratch
+# SGD, RMSprop, Adam implmentation from scratch
 class _SGD_(Optimizer):
     def __init__(
         self,
         params,
         lr,
         momentum=0,
-        dampening=0,
         weight_decay=0,
-        nesterov=False,
-        *,
-        maximize: bool = False,
-        foreach: Optional[bool] = None,
-        differentiable: bool = False
     ):
-        raise NotImplementedError
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+        )
+        super().__init__(params, defaults)
 
-    def step(self, closure=None):
-        raise NotImplementedError
+    def __init_state__(self, state, p):
+        state["momentum_buffer"] = torch.zeros_like(p)
+
+    def step(self):
+        lr = self.defaults["lr"]
+        momentum = self.defaults["momentum"]
+        weight_decay = self.defaults["weight_decay"]
+
+        # Loop through each parameter in each parameter group
+        with torch.no_grad():
+            for group in self.param_groups:
+                for p in group["params"]:
+                    # Get momentum buffer
+                    state = self.state[p]
+                    if len(state) == 0:
+                        self.__init_state__(state, p)
+                    momentum_buffer = state["momentum_buffer"]
+
+                    # Get gradient of param
+                    if p.grad is None:
+                        continue
+                    grad = p.grad.data 
+
+                    # Add weight decay
+                    if weight_decay != 0:
+                        grad += weight_decay * p
+
+                    # add momentum to gradient
+                    buffer = momentum * momentum_buffer + grad
+
+                    # update parameter
+                    p -= lr * buffer
+
+                    # update momentum buffer
+                    state["momentum_buffer"] = buffer 
 
 
 class _RMSprop_(Optimizer):
@@ -39,9 +71,6 @@ class _RMSprop_(Optimizer):
         weight_decay=0,
         momentum=0,
         centered=False,
-        foreach: Optional[bool] = None,
-        maximize: bool = False,
-        differentiable: bool = False,
     ):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
@@ -61,9 +90,6 @@ class _RMSprop_(Optimizer):
             eps=eps,
             centered=centered,
             weight_decay=weight_decay,
-            foreach=foreach,
-            maximize=maximize,
-            differentiable=differentiable,
         )
         super().__init__(params, defaults)
 
@@ -95,7 +121,7 @@ class _RMSprop_(Optimizer):
                     # Get gradient of param
                     if p.grad is None:
                         continue
-                    grad = p.grad.data if not self.defaults["maximize"] else -p.grad.data
+                    grad = p.grad.data 
                     if weight_decay != 0:
                         grad += weight_decay * p
 
@@ -132,12 +158,6 @@ class _Adam_(Optimizer):
         eps=1e-8,
         weight_decay=0,
         amsgrad=False,
-        *,
-        foreach: Optional[bool] = None,
-        maximize: bool = False,
-        capturable: bool = False,
-        differentiable: bool = False,
-        fused: Optional[bool] = None
     ):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
@@ -152,8 +172,7 @@ class _Adam_(Optimizer):
 
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay, amsgrad=amsgrad,
-                        maximize=maximize, foreach=foreach, capturable=capturable,
-                        differentiable=differentiable, fused=fused)
+                        )
         super().__init__(params, defaults)
 
     def __init_state__(self, state, p):
@@ -181,7 +200,7 @@ class _Adam_(Optimizer):
                     # Get gradient of param
                     if p.grad is None:
                         continue
-                    grad = p.grad.data if not self.defaults["maximize"] else -p.grad.data
+                    grad = p.grad.data
                     if weight_decay != 0:
                         grad += weight_decay * p
 
