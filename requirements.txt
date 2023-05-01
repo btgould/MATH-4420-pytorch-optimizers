@@ -3,3 +3,5 @@ torch
 torchvision
 termcolor
 tqdm
+matplotlib
+PyQt6

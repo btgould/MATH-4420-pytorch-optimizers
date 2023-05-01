@@ -8,11 +8,16 @@ from termcolor import colored
 from tqdm import tqdm
 from time import time
 
+from plots import plot_conv_rate
+
 
 # train loop using autmatic mixed precision
 def train(model, dataset, optimizer, Loss, schedueler, epochs):
     model.train()
     scaler = torch.cuda.amp.GradScaler()
+
+    losses = []
+
     for epoch in range(epochs):
         epoch_start = time()
         running_loss = 0.0
@@ -28,12 +33,18 @@ def train(model, dataset, optimizer, Loss, schedueler, epochs):
             scaler.step(optimizer)
             scaler.update()
             running_loss += loss.item()
+        
+        avg_loss = running_loss / len(dataset)
+        losses.append(avg_loss)
         print(
-            f"Epoch: {epoch + 1}, average loss: {running_loss / len(dataset):.4f}, time: {time() - epoch_start:.2f} seconds"
+            f"Epoch: {epoch + 1}, average loss: {avg_loss:.4f}, time: {time() - epoch_start:.2f} seconds"
         )
+
         running_loss = 0.0
         if schedueler is not None:
             schedueler.step()
+
+    return losses
 
 
 def test(model, dataset):
@@ -153,7 +164,7 @@ if __name__ == "__main__":
 
     # train and test
     for dataset_name, trainset, testset in dataset_list:
-        for name, Opt in optimizer_list:
+        for optimizer_name, Opt in optimizer_list:
             # initialize model
             if dataset_name == "MNIST":
                 model = iresnet34(image_channels=1)
@@ -161,15 +172,17 @@ if __name__ == "__main__":
                 model = iresnet34(image_channels=3)
             device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             model.to(device)
-            if name in ["SGD", "RMSprop"]:
+            if optimizer_name in ["SGD", "RMSprop"]:
                 optimizer = Opt(model.parameters(), lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY)
             else:
                 optimizer = Opt(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
             print(
                 colored(
-                    f"training on dataset {dataset_name} with optimizer {name}...",
+                    f"training on dataset {dataset_name} with optimizer {optimizer_name}...",
                     "green",
                 )
             )
-            train(model, trainset, optimizer, loss, None, EPOCHS)
+
+            losses = train(model, trainset, optimizer, loss, None, EPOCHS)
+            plot_conv_rate(losses, file_name=f"{dataset_name}_{optimizer_name}_convergence")
             test(model, testset)
