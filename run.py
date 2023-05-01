@@ -8,7 +8,7 @@ from termcolor import colored
 from tqdm import tqdm
 from time import time
 
-from plots import plot_conv_rate
+from plots import plot_conv_rate, plot_test_accuracies
 
 
 # train loop using autmatic mixed precision
@@ -33,7 +33,7 @@ def train(model, dataset, optimizer, Loss, schedueler, epochs):
             scaler.step(optimizer)
             scaler.update()
             running_loss += loss.item()
-        
+
         avg_loss = running_loss / len(dataset)
         losses.append(avg_loss)
         print(
@@ -102,7 +102,11 @@ if __name__ == "__main__":
     dataset_list = []
     dataset_idx = {
         "MNIST": (torchvision.datasets.MNIST, (0.1307,), (0.3081,)),
-        "CIFAR": (torchvision.datasets.CIFAR10, (0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+        "CIFAR": (
+            torchvision.datasets.CIFAR10,
+            (0.4914, 0.4822, 0.4465),
+            (0.247, 0.243, 0.261),
+        ),
     }
 
     for dataset_name in args.dataset.split():
@@ -163,6 +167,11 @@ if __name__ == "__main__":
     loss = nn.CrossEntropyLoss()
 
     # train and test
+    accuracies = {
+        "MNIST": [],
+        "CIFAR": [],
+    }
+
     for dataset_name, trainset, testset in dataset_list:
         for optimizer_name, Opt in optimizer_list:
             # initialize model
@@ -173,7 +182,12 @@ if __name__ == "__main__":
             device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             model.to(device)
             if optimizer_name in ["SGD", "RMSprop"]:
-                optimizer = Opt(model.parameters(), lr=LR, momentum=MOMENTUM, weight_decay=WEIGHT_DECAY)
+                optimizer = Opt(
+                    model.parameters(),
+                    lr=LR,
+                    momentum=MOMENTUM,
+                    weight_decay=WEIGHT_DECAY,
+                )
             else:
                 optimizer = Opt(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
             print(
@@ -184,5 +198,15 @@ if __name__ == "__main__":
             )
 
             losses = train(model, trainset, optimizer, loss, None, EPOCHS)
-            plot_conv_rate(losses, file_name=f"{dataset_name}_{optimizer_name}_convergence")
-            test(model, testset)
+            plot_conv_rate(
+                losses,
+                file_name=f"{dataset_name}_{optimizer_name}_convergence{'_preimpl' if args.preimplemented else ''}",
+            )
+            accuracy = test(model, testset)
+            accuracies[dataset_name].append(accuracy)
+
+    plot_test_accuracies(
+        accuracies,
+        [opt_name for (opt_name, _) in optimizer_list],
+        file_name=f"accuracies{'_preimpl' if args.preimplemented else ''}",
+    )
