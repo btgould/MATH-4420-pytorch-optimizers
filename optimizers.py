@@ -174,7 +174,15 @@ class _Adam_(Optimizer):
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay, amsgrad=amsgrad,
                         )
+        
+        self.first_moment_list = []
+        self.second_moment_list = []
+        self.param_array_count = 0
+
         super().__init__(params, defaults)
+        for group in self.param_groups:
+            for p in group["params"]:
+                self.param_array_count += 1
 
     def __init_state__(self, state, p):
         state["first_moment"] = torch.zeros_like(p)
@@ -186,6 +194,9 @@ class _Adam_(Optimizer):
         eps = self.defaults["eps"]
         beta_1, beta_2 = self.defaults["betas"]
         weight_decay = self.defaults["weight_decay"]
+
+        avg_first_moment = 0
+        avg_second_moment = 0
 
         with torch.no_grad():
             for group in self.param_groups:
@@ -210,6 +221,8 @@ class _Adam_(Optimizer):
                     second_moment = beta_2 * second_moment + (1-beta_2) * grad ** 2
                     state["first_moment"] = first_moment
                     state["second_moment"] = second_moment
+                    avg_first_moment += torch.mean(first_moment).item()
+                    avg_second_moment += torch.mean(second_moment).item()
 
                     normalized_first_moment = first_moment / (1 - beta_1)
                     normalized_second_moment = second_moment / (1 - beta_2)
@@ -221,3 +234,6 @@ class _Adam_(Optimizer):
                         p -= lr * normalized_first_moment / (max_second_moment.sqrt() + eps)
                     else:
                         p -= lr * normalized_first_moment / (normalized_second_moment.sqrt() + eps)
+
+            self.first_moment_list.append(avg_first_moment / self.param_array_count)
+            self.second_moment_list.append(avg_second_moment / self.param_array_count)

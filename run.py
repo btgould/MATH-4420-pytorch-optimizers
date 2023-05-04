@@ -139,6 +139,7 @@ def get_dataset_list(args):
                 download=True,
                 transform=torchvision.transforms.Compose(
                     [
+                        torchvision.transforms.RandomHorizontalFlip(.5),
                         torchvision.transforms.ToTensor(),
                         torchvision.transforms.Normalize(mean, std),
                     ]
